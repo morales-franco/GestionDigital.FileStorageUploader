@@ -55,3 +55,10 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# Local tooling and credentials
+.vs/
+.DS_Store
+Keys/
+*.csproj.user
+Properties/PublishProfiles/
