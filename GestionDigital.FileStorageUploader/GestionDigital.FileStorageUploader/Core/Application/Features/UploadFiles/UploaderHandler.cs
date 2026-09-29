@@ -1,4 +1,4 @@
-namespace GestionDigital.FileStorageUploader.Core.Application.Features.UploadRecibos;
+namespace GestionDigital.FileStorageUploader.Core.Application.Features.UploadFiles;
 
 public class UploaderHandler : IUploaderHandler
 {

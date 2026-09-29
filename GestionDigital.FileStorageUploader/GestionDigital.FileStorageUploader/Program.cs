@@ -1,13 +1,9 @@
 using GestionDigital.FileStorageUploader.Core.Application.Features.DeleteLocalFiles;
-using GestionDigital.FileStorageUploader.Core.Application.Features.UploadRecibos;
-using GestionDigital.FileStorageUploader.Core.Domain.Features.Recibos.Services;
-using GestionDigital.FileStorageUploader.Core.Domain.Features.ScheduleByEmpresas.Services;
+using GestionDigital.FileStorageUploader.Core.Application.Features.UploadFiles;
 using GestionDigital.FileStorageUploader.Core.Domain.Features.Settings;
-using GestionDigital.FileStorageUploader.Core.Domain.Features.StorageTypes.Services;
+using GestionDigital.FileStorageUploader.Core.Domain.Features.Storages.Services;
 using GestionDigital.FileStorageUploader.Infrastructure.Databases;
-using GestionDigital.FileStorageUploader.Infrastructure.Features.Recibos;
-using GestionDigital.FileStorageUploader.Infrastructure.Features.ScheduleByEmpresas;
-using GestionDigital.FileStorageUploader.Infrastructure.Features.StorageTypes;
+using GestionDigital.FileStorageUploader.Infrastructure.Features.Storages;
 using GestionDigital.FileStorageUploader.Workers;
 using Google.Apis.Core;
 using Google.Apis.Http;
@@ -54,10 +50,6 @@ internal class Program
 
         builder.Services.AddScoped<IUploaderHandler, UploaderHandler>();
         builder.Services.AddScoped<IDeleteLocalFileHandler, DeleteLocalFileHandler>();
-        builder.Services.AddScoped<IReciboService, ReciboService>();
-        builder.Services.AddScoped<ICloudStorageService, CloudStorageService>();
-        builder.Services.AddScoped<IScheduleByEmpresaService, ScheduleByEmpresaService>();
-        builder.Services.AddScoped<IScheduleByEmpresaExecutionService, ScheduleByEmpresaExecutionService>();
         builder.Services.AddSingleton(_ =>
         {
             var timeoutSeconds = builder.Configuration.GetValue("CloudStorageSettings:RequestTimeoutInSeconds", 600);
@@ -68,8 +60,8 @@ internal class Program
             }.Build();
         });
 
-        builder.Services.AddKeyedScoped<IStorageTypeService,StorageTypeService>("inner");
-        builder.Services.AddScoped<IStorageTypeService, StorageTypeServiceProxy>();
+        builder.Services.AddKeyedScoped<IStorageService,StorageService>("inner");
+        builder.Services.AddScoped<IStorageService, StorageServiceProxy>();
 
         Environment.SetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS", builder.Configuration.GetValue<string>("CloudStorageSettings:StorageKey"));
 
