@@ -12,6 +12,8 @@ using Google.Apis.Http;
 using Google.Cloud.Storage.V1;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
+using GestionDigital.FileStorageUploader.Core.Domain.Features.UploadExecutions;
+using GestionDigital.FileStorageUploader.Infrastructure.Features.UploadExecutions;
 
 internal class Program
 {
@@ -60,6 +62,7 @@ internal class Program
         builder.Services.Configure<DeleteLocalFileSettings>(builder.Configuration.GetSection("DeleteLocalFileSettings"));
 
         builder.Services.AddScoped<IUploaderHandler, UploaderHandler>();
+        builder.Services.AddScoped<IUploadExecutionService, UploadExecutionService>();
         builder.Services.AddScoped<IFileUploadService, FileUploadService>();
         builder.Services.AddScoped<ICloudStorageService, CloudStorageService>();
         builder.Services.AddScoped<IDeleteLocalFileHandler, DeleteLocalFileHandler>();

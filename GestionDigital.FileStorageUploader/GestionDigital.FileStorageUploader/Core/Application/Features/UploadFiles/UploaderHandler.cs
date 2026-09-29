@@ -2,6 +2,7 @@ using GestionDigital.FileStorageUploader.Core.Domain.Features.Files.Services;
 using GestionDigital.FileStorageUploader.Core.Domain.Features.Settings;
 using GestionDigital.FileStorageUploader.Core.Domain.Features.Storages;
 using Microsoft.Extensions.Options;
+using GestionDigital.FileStorageUploader.Core.Domain.Features.UploadExecutions;
 using FileEntity = GestionDigital.FileStorageUploader.Core.Domain.Features.Files.File;
 
 namespace GestionDigital.FileStorageUploader.Core.Application.Features.UploadFiles;
@@ -13,6 +14,7 @@ public class UploaderHandler : IUploaderHandler
     private readonly ICloudStorageService _cloud;
     private readonly StorageSettings _settings;
     private readonly TimeProvider _clock;
+    private readonly IUploadExecutionService _executions;
 
     private const int BatchSize = 50;
 
@@ -21,6 +23,7 @@ public class UploaderHandler : IUploaderHandler
         IFileUploadService files,
         ICloudStorageService cloud,
         IOptions<StorageSettings> settings,
+        IUploadExecutionService executions,
         TimeProvider? clock = null)
     {
         _logger = logger;
@@ -28,6 +31,7 @@ public class UploaderHandler : IUploaderHandler
         _cloud = cloud;
         _settings = settings.Value;
         _clock = clock ?? TimeProvider.System;
+        _executions = executions;
     }
 
     public async Task HandleAsync(
@@ -41,43 +45,56 @@ public class UploaderHandler : IUploaderHandler
         if (now >= windowEnd)
             return;
 
-        ValidateMonthsInDb(now);
-
-        var cutoff = now.AddMonths(-_settings.MonthsInDb);
-
-        var storage = await _files.GetCloudStorageAsync(
-            _settings.DefaultStorageTypeId,
-            cancellationToken);
-
+        var executionId = await _executions.StartAsync(now, _settings.DefaultStorageTypeId, cancellationToken);
         long uploaded = 0;
-
-        _logger.LogInformation(
-            "UploaderHandler [START] - CreatedDate before {Cutoff}. MonthsInDb: {MonthsInDb}",
-            cutoff,
-            _settings.MonthsInDb);
-
-        while (IsWithinWindow(windowEnd))
+        try
         {
+            ValidateMonthsInDb(now);
+            var cutoff = now.AddMonths(-_settings.MonthsInDb);
+            var expected = await _files.CountAsync(cutoff, cancellationToken);
+            await _executions.SetExpectedCountAsync(executionId, expected, cancellationToken);
+            var storage = await _files.GetCloudStorageAsync(_settings.DefaultStorageTypeId, cancellationToken);
+            _logger.LogInformation(
+                "UploaderHandler [START] - ExecutionId: {ExecutionId}. CreatedDate before {Cutoff}. Expected: {Expected}",
+                executionId, cutoff, expected);
+
+            while (uploaded < expected && IsWithinWindow(windowEnd))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var files = await _files.GetBatchAsync(cutoff,
+                    (int)Math.Min(BatchSize, expected - uploaded), cancellationToken);
+                if (files.Count == 0) break;
+                await ProcessBatchAsync(files, storage, executionId, windowEnd,
+                    () => uploaded++, cancellationToken);
+            }
+
             cancellationToken.ThrowIfCancellationRequested();
-
-            var files = await _files.GetBatchAsync(
-                cutoff,
-                BatchSize,
-                cancellationToken);
-
-            if (files.Count == 0)
-                break;
-
-            uploaded += await ProcessBatchAsync(
-                files,
-                storage,
-                windowEnd,
-                cancellationToken);
+            var status = uploaded < expected && !IsWithinWindow(windowEnd)
+                ? UploadExecutionStatus.SUCCESS_INTERRUPTED
+                : UploadExecutionStatus.SUCCESS;
+            await _executions.FinishAsync(executionId, status, _clock.GetLocalNow().DateTime, null, cancellationToken);
+            _logger.LogInformation("UploaderHandler [END] - ExecutionId: {ExecutionId}. Status: {Status}. Uploaded: {Uploaded}/{Expected}",
+                executionId, status, uploaded, expected);
         }
-
-        _logger.LogInformation(
-            "UploaderHandler [END] - TotalUploaded: {TotalUploaded}",
-            uploaded);
+        catch (Exception ex)
+        {
+            // The host token may be cancelled. Give the audit write its own bounded lifetime.
+            using var auditTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            try
+            {
+                var error = ex is OperationCanceledException && cancellationToken.IsCancellationRequested
+                    ? "Uploader cancelled by service shutdown. " + ex.Message
+                    : ex.ToString();
+                await _executions.FinishAsync(executionId, UploadExecutionStatus.FAILED,
+                    _clock.GetLocalNow().DateTime, error, auditTimeout.Token);
+            }
+            catch (Exception auditError)
+            {
+                _logger.LogError(auditError, "Could not finalize upload execution {ExecutionId}. Original error: {Error}",
+                    executionId, ex.ToString());
+            }
+            throw;
+        }
     }
 
     private void ValidateMonthsInDb(DateTime now)
@@ -97,14 +114,14 @@ public class UploaderHandler : IUploaderHandler
         return _clock.GetLocalNow().DateTime < windowEnd;
     }
 
-    private async Task<long> ProcessBatchAsync(
+    private async Task ProcessBatchAsync(
         IReadOnlyList<FileEntity> files,
         Storage storage,
+        long executionId,
         DateTime windowEnd,
+        Action onUploaded,
         CancellationToken cancellationToken)
     {
-        long uploaded = 0;
-
         foreach (var file in files)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -115,17 +132,18 @@ public class UploaderHandler : IUploaderHandler
             await UploadFileAsync(
                 file,
                 storage,
+                executionId,
                 cancellationToken);
 
-            uploaded++;
+            onUploaded();
         }
 
-        return uploaded;
     }
 
     private async Task UploadFileAsync(
         FileEntity file,
         Storage storage,
+        long executionId,
         CancellationToken cancellationToken)
     {
         try
@@ -140,6 +158,7 @@ public class UploaderHandler : IUploaderHandler
                 file,
                 storage.Code,
                 objectName,
+                executionId,
                 cancellationToken);
 
             _logger.LogInformation(

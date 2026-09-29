@@ -3,6 +3,7 @@ using GestionDigital.FileStorageUploader.Core.Domain.Features.Files.Services;
 using GestionDigital.FileStorageUploader.Core.Domain.Features.Storages;
 using GestionDigital.FileStorageUploader.Infrastructure.Databases;
 using Microsoft.EntityFrameworkCore;
+using GestionDigital.FileStorageUploader.Core.Domain.Features.UploadExecutions;
 using FileEntity = GestionDigital.FileStorageUploader.Core.Domain.Features.Files.File;
 
 namespace GestionDigital.FileStorageUploader.Infrastructure.Features.Files;
@@ -20,16 +21,24 @@ public class FileUploadService(IDbContextFactory<ApplicationDbContext> contextFa
     public async Task<IReadOnlyList<FileEntity>> GetBatchAsync(DateTime cutoff, int batchSize, CancellationToken cancellationToken)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-        return await context.Files.AsNoTracking()
-            .Where(x => x.StorageId == Storage.Local && x.CreatedDate < cutoff
-                && x.LocalFile != null && !x.LocalFile.PendingDelete)
+        return await EligibleFiles(context, cutoff)
             .OrderBy(x => x.CreatedDate).ThenBy(x => x.Id)
             .Include(x => x.LocalFile)
             .Take(batchSize)
             .ToListAsync(cancellationToken);
     }
 
-    public async Task MarkUploadedAsync(FileEntity file, string storageCode, string objectName, CancellationToken cancellationToken)
+    private static IQueryable<FileEntity> EligibleFiles(ApplicationDbContext context, DateTime cutoff) =>
+        context.Files.AsNoTracking().Where(x => x.StorageId == Storage.Local && x.CreatedDate < cutoff
+            && x.LocalFile != null && !x.LocalFile.PendingDelete);
+
+    public async Task<long> CountAsync(DateTime cutoff, CancellationToken cancellationToken)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        return await EligibleFiles(context, cutoff).LongCountAsync(cancellationToken);
+    }
+
+    public async Task MarkUploadedAsync(FileEntity file, string storageCode, string objectName, long executionId, CancellationToken cancellationToken)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
         await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
@@ -67,6 +76,12 @@ public class FileUploadService(IDbContextFactory<ApplicationDbContext> contextFa
             cloudFile.Timestamp = now;
         }
         await context.SaveChangesAsync(cancellationToken);
+        var audited = await context.UploadExecutions
+            .Where(x => x.Id == executionId && x.Status == UploadExecutionStatus.RUNNING)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.UploadedFilesCount, x => x.UploadedFilesCount + 1),
+                cancellationToken);
+        if (audited != 1)
+            throw new InvalidOperationException($"Running upload execution {executionId} not found.");
         await transaction.CommitAsync(cancellationToken);
     }
 }
