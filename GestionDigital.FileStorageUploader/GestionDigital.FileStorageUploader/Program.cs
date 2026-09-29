@@ -1,4 +1,6 @@
 using GestionDigital.FileStorageUploader.Core.Application.Features.DeleteLocalFiles;
+using GestionDigital.FileStorageUploader.Core.Domain.Features.Files.Services;
+using GestionDigital.FileStorageUploader.Infrastructure.Features.Files;
 using GestionDigital.FileStorageUploader.Core.Application.Features.UploadFiles;
 using GestionDigital.FileStorageUploader.Core.Domain.Features.Settings;
 using GestionDigital.FileStorageUploader.Core.Domain.Features.Storages.Services;
@@ -50,6 +52,7 @@ internal class Program
 
         builder.Services.AddScoped<IUploaderHandler, UploaderHandler>();
         builder.Services.AddScoped<IDeleteLocalFileHandler, DeleteLocalFileHandler>();
+        builder.Services.AddScoped<ILocalFileService, LocalFileService>();
         builder.Services.AddSingleton(_ =>
         {
             var timeoutSeconds = builder.Configuration.GetValue("CloudStorageSettings:RequestTimeoutInSeconds", 600);
