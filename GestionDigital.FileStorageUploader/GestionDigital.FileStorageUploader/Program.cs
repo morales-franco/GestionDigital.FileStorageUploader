@@ -47,10 +47,21 @@ internal class Program
         builder.Services.AddSerilog((services, loggerConfiguration) =>
             loggerConfiguration.ReadFrom.Configuration(builder.Configuration));
 
-        builder.Services.Configure<StorageSettings>(builder.Configuration.GetSection("StorageSettings"));
+        builder.Services.AddOptions<StorageSettings>()
+            .Bind(builder.Configuration.GetSection("StorageSettings"))
+            .Validate(settings =>
+            {
+                var now = DateTime.Now;
+                return settings.MonthsInDb >= 0 && settings.MonthsInDb <= (now.Year - 1) * 12 + now.Month - 1;
+            }, "StorageSettings:MonthsInDb must be non-negative and within the supported date range.")
+            .Validate(settings => !string.IsNullOrWhiteSpace(settings.DefaultStorageTypeId),
+                "StorageSettings:DefaultStorageTypeId must specify the cloud bucket.")
+            .ValidateOnStart();
         builder.Services.Configure<DeleteLocalFileSettings>(builder.Configuration.GetSection("DeleteLocalFileSettings"));
 
         builder.Services.AddScoped<IUploaderHandler, UploaderHandler>();
+        builder.Services.AddScoped<IFileUploadService, FileUploadService>();
+        builder.Services.AddScoped<ICloudStorageService, CloudStorageService>();
         builder.Services.AddScoped<IDeleteLocalFileHandler, DeleteLocalFileHandler>();
         builder.Services.AddScoped<ILocalFileService, LocalFileService>();
         builder.Services.AddSingleton(_ =>
