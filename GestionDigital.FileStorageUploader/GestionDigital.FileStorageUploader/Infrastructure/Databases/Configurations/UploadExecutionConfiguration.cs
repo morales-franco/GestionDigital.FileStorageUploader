@@ -16,8 +16,8 @@ public class UploadExecutionConfiguration : IEntityTypeConfiguration<UploadExecu
         builder.Property(x => x.Status).HasMaxLength(20).IsUnicode(false)
             .HasDefaultValue(UploadExecutionStatus.RUNNING).IsRequired();
         builder.Property(x => x.TargetStorageTypeId).HasMaxLength(50).IsUnicode(false).IsRequired();
-        builder.Property(x => x.ExpectedFilesCount).HasDefaultValue(0);
-        builder.Property(x => x.UploadedFilesCount).HasDefaultValue(0);
+        builder.Property(x => x.ExpectedFilesCount).HasDefaultValue(0).ValueGeneratedNever();
+        builder.Property(x => x.UploadedFilesCount).HasDefaultValue(0).ValueGeneratedNever();
         builder.Property(x => x.ErrorMessage).HasMaxLength(1000);
         builder.Property(x => x.CreatedDate).HasColumnType("datetime").HasDefaultValueSql("GETDATE()");
         builder.HasIndex(x => x.StartedAt);
