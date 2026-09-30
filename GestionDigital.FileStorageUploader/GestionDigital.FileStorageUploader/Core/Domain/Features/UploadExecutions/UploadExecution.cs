@@ -2,13 +2,13 @@ namespace GestionDigital.FileStorageUploader.Core.Domain.Features.UploadExecutio
 
 public class UploadExecution
 {
-    public long Id { get; set; }
+    public int Id { get; set; }
     public DateTime StartedAt { get; set; }
     public DateTime? FinishedAt { get; set; }
     public string Status { get; set; } = UploadExecutionStatus.RUNNING;
     public required string TargetStorageTypeId { get; set; }
-    public long ExpectedFilesCount { get; set; }
-    public long UploadedFilesCount { get; set; }
+    public int ExpectedFilesCount { get; set; }
+    public int UploadedFilesCount { get; set; }
     public string? ErrorMessage { get; set; }
     public DateTime CreatedDate { get; set; }
 }

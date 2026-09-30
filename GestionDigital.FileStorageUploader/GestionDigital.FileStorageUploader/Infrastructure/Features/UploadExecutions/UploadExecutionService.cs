@@ -20,10 +20,11 @@ public class UploadExecutionService(IDbContextFactory<ApplicationDbContext> cont
 
     public async Task SetExpectedCountAsync(long id, long count, CancellationToken cancellationToken)
     {
+        var expectedCount = checked((int)count);
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
         var changed = await context.UploadExecutions
             .Where(x => x.Id == id && x.Status == UploadExecutionStatus.RUNNING)
-            .ExecuteUpdateAsync(s => s.SetProperty(x => x.ExpectedFilesCount, count), cancellationToken);
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.ExpectedFilesCount, expectedCount), cancellationToken);
         if (changed != 1) throw new InvalidOperationException($"Running upload execution {id} not found.");
     }
 
