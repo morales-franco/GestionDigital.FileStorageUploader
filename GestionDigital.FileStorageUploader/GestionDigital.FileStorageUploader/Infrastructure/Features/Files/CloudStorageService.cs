@@ -1,6 +1,4 @@
 using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
 using GestionDigital.FileStorageUploader.Core.Domain.Features.Files.Services;
 using Google.Cloud.Storage.V1;
 using FileEntity = GestionDigital.FileStorageUploader.Core.Domain.Features.Files.File;
@@ -19,11 +17,10 @@ public class CloudStorageService(
         var retries = Math.Max(0, configuration.GetValue("CloudStorageSettings:UploadRetries", 3));
         var retryDelay = TimeSpan.FromSeconds(Math.Max(0, configuration.GetValue("CloudStorageSettings:UploadRetryDelayInSeconds", 10)));
 
-        // Stable for retries, different for modified content, and fits FileCloudId varchar(50).
-        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        hash.AppendData(Encoding.UTF8.GetBytes(file.Id.ToString(CultureInfo.InvariantCulture) + "\n" + file.ContentType + "\n"));
-        hash.AppendData(content);
-        var objectName = "files/" + Convert.ToBase64String(hash.GetHashAndReset()).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        // Generate once so all retries of this upload use the same object name.
+        var objectName = $"{file.Id.ToString("D10", CultureInfo.InvariantCulture)}_{Guid.NewGuid():N}{Path.GetExtension(file.FileName)}";
+        if (objectName.Length > 50)
+            throw new InvalidOperationException($"Object name for file {file.Id} exceeds the 50-character FileCloudId limit.");
 
         for (var attempt = 0; ; attempt++)
         {
