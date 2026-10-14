@@ -51,11 +51,6 @@ internal class Program
 
         builder.Services.AddOptions<StorageSettings>()
             .Bind(builder.Configuration.GetSection("StorageSettings"))
-            .Validate(settings =>
-            {
-                var now = DateTime.Now;
-                return settings.MonthsInDb >= 0 && settings.MonthsInDb <= (now.Year - 1) * 12 + now.Month - 1;
-            }, "StorageSettings:MonthsInDb must be non-negative and within the supported date range.")
             .Validate(settings => !string.IsNullOrWhiteSpace(settings.DefaultStorageTypeId),
                 "StorageSettings:DefaultStorageTypeId must specify the cloud bucket.")
             .ValidateOnStart();

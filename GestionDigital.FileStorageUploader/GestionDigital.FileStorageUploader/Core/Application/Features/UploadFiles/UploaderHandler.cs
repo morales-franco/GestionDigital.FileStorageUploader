@@ -13,7 +13,6 @@ public class UploaderHandler : IUploaderHandler
     private readonly IFileUploadService _files;
     private readonly ICloudStorageService _cloud;
     private readonly StorageSettings _settings;
-    private readonly TimeProvider _clock;
     private readonly IUploadExecutionService _executions;
 
     private const int BatchSize = 50;
@@ -23,14 +22,12 @@ public class UploaderHandler : IUploaderHandler
         IFileUploadService files,
         ICloudStorageService cloud,
         IOptions<StorageSettings> settings,
-        IUploadExecutionService executions,
-        TimeProvider? clock = null)
+        IUploadExecutionService executions)
     {
         _logger = logger;
         _files = files;
         _cloud = cloud;
         _settings = settings.Value;
-        _clock = clock ?? TimeProvider.System;
         _executions = executions;
     }
 
@@ -40,7 +37,7 @@ public class UploaderHandler : IUploaderHandler
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var now = _clock.GetLocalNow().DateTime;
+        var now = DateTime.Now;
 
         if (now >= windowEnd)
             return;
@@ -49,7 +46,6 @@ public class UploaderHandler : IUploaderHandler
         long uploaded = 0;
         try
         {
-            ValidateMonthsInDb(now);
             var cutoff = now.AddMonths(-_settings.MonthsInDb);
             var expected = await _files.CountAsync(cutoff, cancellationToken);
             await _executions.SetExpectedCountAsync(executionId, expected, cancellationToken);
@@ -58,7 +54,7 @@ public class UploaderHandler : IUploaderHandler
                 "UploaderHandler [START] - ExecutionId: {ExecutionId}. CreatedDate before {Cutoff}. Expected: {Expected}",
                 executionId, cutoff, expected);
 
-            while (uploaded < expected && IsWithinWindow(windowEnd))
+            while (uploaded < expected && DateTime.Now < windowEnd)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var files = await _files.GetBatchAsync(cutoff,
@@ -69,49 +65,20 @@ public class UploaderHandler : IUploaderHandler
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            var status = uploaded < expected && !IsWithinWindow(windowEnd)
+            var status = uploaded < expected && DateTime.Now >= windowEnd
                 ? UploadExecutionStatus.SUCCESS_INTERRUPTED
                 : UploadExecutionStatus.SUCCESS;
-            await _executions.FinishAsync(executionId, status, _clock.GetLocalNow().DateTime, null, cancellationToken);
+            await _executions.FinishAsync(executionId, status, DateTime.Now, null, cancellationToken);
             _logger.LogInformation("UploaderHandler [END] - ExecutionId: {ExecutionId}. Status: {Status}. Uploaded: {Uploaded}/{Expected}",
                 executionId, status, uploaded, expected);
         }
         catch (Exception ex)
         {
-            // The host token may be cancelled. Give the audit write its own bounded lifetime.
-            using var auditTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            try
-            {
-                var error = ex is OperationCanceledException && cancellationToken.IsCancellationRequested
-                    ? "Uploader cancelled by service shutdown. " + ex.Message
-                    : ex.ToString();
-                await _executions.FinishAsync(executionId, UploadExecutionStatus.FAILED,
-                    _clock.GetLocalNow().DateTime, error, auditTimeout.Token);
-            }
-            catch (Exception auditError)
-            {
-                _logger.LogError(auditError, "Could not finalize upload execution {ExecutionId}. Original error: {Error}",
-                    executionId, ex.ToString());
-            }
+            _logger.LogError(ex, "Upload execution {ExecutionId} failed.", executionId);
+            await _executions.FinishAsync(executionId, UploadExecutionStatus.FAILED,
+                DateTime.Now, ex.ToString(), CancellationToken.None);
             throw;
         }
-    }
-
-    private void ValidateMonthsInDb(DateTime now)
-    {
-        var maxMonths = (now.Year - 1) * 12 + now.Month - 1;
-
-        if (_settings.MonthsInDb < 0 ||
-            _settings.MonthsInDb > maxMonths)
-        {
-            throw new InvalidOperationException(
-                "StorageSettings:MonthsInDb is outside the supported date range.");
-        }
-    }
-
-    private bool IsWithinWindow(DateTime windowEnd)
-    {
-        return _clock.GetLocalNow().DateTime < windowEnd;
     }
 
     private async Task ProcessBatchAsync(
@@ -126,7 +93,7 @@ public class UploaderHandler : IUploaderHandler
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (!IsWithinWindow(windowEnd))
+            if (DateTime.Now >= windowEnd)
                 break;
 
             await UploadFileAsync(
@@ -164,11 +131,6 @@ public class UploaderHandler : IUploaderHandler
             _logger.LogInformation(
                 "File {FileId} moved to cloud.",
                 file.Id);
-        }
-        catch (OperationCanceledException)
-            when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
         }
         catch (Exception ex)
         {
