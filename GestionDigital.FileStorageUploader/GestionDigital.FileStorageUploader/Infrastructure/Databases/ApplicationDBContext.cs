@@ -1,8 +1,9 @@
-using GestionDigital.FileStorageUploader.Core.Domain.Features.Recibos;
-using GestionDigital.FileStorageUploader.Core.Domain.Features.ScheduleByEmpresas;
-using GestionDigital.FileStorageUploader.Core.Domain.Features.StorageTypes;
+using GestionDigital.FileStorageUploader.Core.Domain.Features.Storages;
+using GestionDigital.FileStorageUploader.Core.Domain.Features.Files;
+using FileEntity = GestionDigital.FileStorageUploader.Core.Domain.Features.Files.File;
 using GestionDigital.FileStorageUploader.Infrastructure.Databases.Configurations;
 using Microsoft.EntityFrameworkCore;
+using GestionDigital.FileStorageUploader.Core.Domain.Features.UploadExecutions;
 
 namespace GestionDigital.FileStorageUploader.Infrastructure.Databases;
 
@@ -13,12 +14,11 @@ public class ApplicationDbContext : DbContext
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) =>
-        modelBuilder.ApplyConfigurationsFromAssembly(typeof(ScheduleByEmpresaConfiguration).Assembly);
-    public DbSet<ScheduleByEmpresa> SchedulesByEmpresas { get; set; }
-    public DbSet<ScheduleByEmpresaExecution> ScheduleByEmpresaExecutions { get; set; }
-    public DbSet<Recibo> Recibos { get; set; }
-    public DbSet<ReciboCloudFile> ReciboCloudFiles { get; set; }
-    public DbSet<ReciboLocalFile> ReciboLocalFiles { get; set; }
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(StorageConfiguration).Assembly);
 
-    public DbSet<StorageType> StorageTypes { get; set; }
+    public DbSet<Storage> Storages { get; set; }
+    public DbSet<FileEntity> Files { get; set; }
+    public DbSet<LocalFile> LocalFiles { get; set; }
+    public DbSet<CloudFile> CloudFiles { get; set; }
+    public DbSet<UploadExecution> UploadExecutions { get; set; }
 }

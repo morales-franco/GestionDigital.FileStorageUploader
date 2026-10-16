@@ -1,4 +1,4 @@
-using GestionDigital.FileStorageUploader.Core.Application.Features.UploadRecibos;
+using GestionDigital.FileStorageUploader.Core.Application.Features.UploadFiles;
 using GestionDigital.FileStorageUploader.Core.Domain.Features.Scheduling;
 
 namespace GestionDigital.FileStorageUploader.Workers;
